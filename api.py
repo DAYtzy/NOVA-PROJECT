@@ -1,14 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import uuid
 import os
 
-app = Flask(__name__)
+# PERUBAHAN DI SINI: static_folder diubah jadi '.' (titik)
+app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)
 
-# Database Configuration (dari environment variable Vercel)
+# Database Configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/nova")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -18,10 +19,8 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
 
-# Model Database
 class User(db.Model):
     __tablename__ = "users"
-
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(20), unique=True, nullable=False)
     nama = db.Column(db.String(100), nullable=False)
@@ -39,39 +38,29 @@ class User(db.Model):
         }
 
 
-# Generate ID Unik Otomatis
 def generate_user_id():
-    """Menghasilkan ID unik dengan format NOVA-XXXXXX"""
     unique = uuid.uuid4().hex[:6].upper()
     return f"NOVA-{unique}"
 
 
-# Inisialisasi Database (dijalankan sekali)
 with app.app_context():
     db.create_all()
 
 
-# Endpoint: Registrasi User Baru
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.get_json()
-
     nama = data.get("nama", "").strip()
     umur = data.get("umur")
     tahun_lahir = data.get("tahun_lahir")
 
-    # Validasi input
     if not nama or not umur or not tahun_lahir:
         return jsonify({"error": "Semua field harus diisi!"}), 400
 
-    # Generate ID unik
     user_id = generate_user_id()
-
-    # Pastikan ID benar-benar unik
     while User.query.filter_by(user_id=user_id).first():
         user_id = generate_user_id()
 
-    # Simpan ke database
     new_user = User(
         user_id=user_id,
         nama=nama,
@@ -81,40 +70,31 @@ def register():
     db.session.add(new_user)
     db.session.commit()
 
-    return jsonify({
-        "message": "Registrasi berhasil!",
-        "user": new_user.to_dict(),
-    }), 201
+    return jsonify({"message": "Registrasi berhasil!", "user": new_user.to_dict()}), 201
 
 
-# Endpoint: Login dengan User ID
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json()
     user_id = data.get("user_id", "").strip().upper()
-
     user = User.query.filter_by(user_id=user_id).first()
 
     if not user:
         return jsonify({"error": "ID tidak ditemukan!"}), 404
 
-    return jsonify({
-        "message": "Login berhasil!",
-        "user": user.to_dict(),
-    }), 200
+    return jsonify({"message": "Login berhasil!", "user": user.to_dict()}), 200
 
 
-# Endpoint: Total User Terdaftar (Real-time)
 @app.route("/api/stats", methods=["GET"])
 def stats():
     total = User.query.count()
     return jsonify({"total_users": total}), 200
 
 
-# Health Check
-@app.route("/api/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok", "project": "NOVA PROJECT"}), 200
+@app.route("/")
+def index():
+    # PERUBAHAN DI SINI: mencari public.html, bukan index.html
+    return send_from_directory(app.static_folder, 'public.html')
 
 
 if __name__ == "__main__":
